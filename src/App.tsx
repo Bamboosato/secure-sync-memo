@@ -11,6 +11,8 @@ import { SetupEncryptionScreen } from './components/SetupEncryptionScreen';
 import { SyncStatusBadge } from './components/SyncStatusBadge';
 import { UnlockScreen } from './components/UnlockScreen';
 import { UpdateBanner } from './components/UpdateBanner';
+import { verifyKeyCheck } from './lib/crypto';
+import { clearCachedDek, loadCachedDek, saveCachedDek } from './lib/dekCache';
 import { auth, secureSignOut } from './lib/firebase';
 import { initFormValidationSync } from './lib/formValidation';
 import {
@@ -49,6 +51,7 @@ export function App() {
   const [keyError, setKeyError] = useState<string | null>(null);
   const [keyDoc, setKeyDoc] = useState<UserKeyDocument | null>(null);
   const [dek, setDek] = useState<CryptoKey | null>(null);
+  const [rememberDevice, setRememberDevice] = useState(false);
 
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -79,6 +82,7 @@ export function App() {
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
 
   const decryptSeqRef = useRef(0);
+  const authSeqRef = useRef(0);
   const lastDecryptedRef = useRef<{ id: string; iv: string; ciphertext: string } | null>(null);
   const swRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
 
@@ -121,6 +125,7 @@ export function App() {
   const clearSessionState = useCallback(() => {
     lastDecryptedRef.current = null;
     setDek(null);
+    setRememberDevice(false);
     setKeyDoc(null);
     setNotes([]);
     setSelectedNoteId(null);
@@ -154,6 +159,7 @@ export function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
+      const currentAuthSeq = ++authSeqRef.current;
       clearSessionState();
       setUser(nextUser);
       setAuthReady(true);
@@ -166,13 +172,33 @@ export function App() {
       setKeyError(null);
       try {
         const fetched = await fetchUserKeyDoc(nextUser.uid);
+        if (authSeqRef.current !== currentAuthSeq) return;
         setKeyDoc(fetched);
+
+        if (fetched) {
+          const cachedDek = await loadCachedDek(nextUser.uid);
+          if (authSeqRef.current !== currentAuthSeq) return;
+          if (cachedDek) {
+            const isValid = await verifyKeyCheck(fetched.keyCheck, cachedDek);
+            if (authSeqRef.current !== currentAuthSeq) return;
+            if (isValid) {
+              setDek(cachedDek);
+              setRememberDevice(true);
+            } else {
+              await clearCachedDek(nextUser.uid);
+              setRememberDevice(false);
+            }
+          }
+        }
       } catch {
+        if (authSeqRef.current !== currentAuthSeq) return;
         setKeyError(
           '暗号化設定の読み込みに失敗しました。ネットワークまたは Firestore ルールを確認してください。',
         );
       } finally {
-        setKeyLoading(false);
+        if (authSeqRef.current === currentAuthSeq) {
+          setKeyLoading(false);
+        }
       }
     });
 
@@ -420,8 +446,10 @@ export function App() {
   };
 
   const handleLockNow = () => {
+    void clearCachedDek(user?.uid);
     lastDecryptedRef.current = null;
     setDek(null);
+    setRememberDevice(false);
     setNotes([]);
     setSelectedNoteId(null);
     setIsNewDraft(false);
@@ -432,6 +460,21 @@ export function App() {
     setIsDirty(false);
     setMobileView('list');
   };
+
+  const handleRememberDeviceChange = useCallback(
+    async (enabled: boolean) => {
+      if (!user) return;
+      if (enabled) {
+        if (!dek) return;
+        const ok = await saveCachedDek(user.uid, dek);
+        setRememberDevice(ok);
+      } else {
+        await clearCachedDek(user.uid);
+        setRememberDevice(false);
+      }
+    },
+    [user, dek],
+  );
 
   const handleSignOut = () => {
     void secureSignOut(clearSessionState);
@@ -596,9 +639,18 @@ export function App() {
         uid={user.uid}
         userEmail={user.email}
         keyDoc={keyDoc}
-        onUnlock={(unlockedDek, updatedDoc) => {
-          if (updatedDoc) setKeyDoc(updatedDoc);
+        onUnlock={(unlockedDek, { rememberDevice: nextRemember, updatedKeyDoc }) => {
+          if (updatedKeyDoc) setKeyDoc(updatedKeyDoc);
           setDek(unlockedDek);
+          if (nextRemember) {
+            setRememberDevice(true);
+            void saveCachedDek(user.uid, unlockedDek).then((ok) => {
+              if (!ok) setRememberDevice(false);
+            });
+          } else {
+            setRememberDevice(false);
+            void clearCachedDek(user.uid);
+          }
         }}
         onSignOut={handleSignOut}
       />,
@@ -734,7 +786,9 @@ export function App() {
         userEmail={user.email}
         keyDoc={keyDoc}
         syncMode={syncMode}
+        rememberDevice={rememberDevice}
         onSyncModeChange={handleSyncModeChange}
+        onRememberDeviceChange={(enabled) => void handleRememberDeviceChange(enabled)}
         onKeyDocUpdated={(updated) => setKeyDoc(updated)}
         onLockNow={handleLockNow}
         onSignOut={handleSignOut}

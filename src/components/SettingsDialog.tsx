@@ -12,7 +12,9 @@ interface SettingsDialogProps {
   userEmail: string | null;
   keyDoc: UserKeyDocument;
   syncMode: SyncMode;
+  rememberDevice: boolean;
   onSyncModeChange: (mode: SyncMode) => void;
+  onRememberDeviceChange: (enabled: boolean) => void;
   onKeyDocUpdated: (updated: UserKeyDocument) => void;
   onLockNow: () => void;
   onSignOut: () => void;
@@ -25,7 +27,9 @@ export function SettingsDialog({
   userEmail,
   keyDoc,
   syncMode,
+  rememberDevice,
   onSyncModeChange,
+  onRememberDeviceChange,
   onKeyDocUpdated,
   onLockNow,
   onSignOut,
@@ -173,12 +177,39 @@ export function SettingsDialog({
           </select>
         </div>
 
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={rememberDevice}
+            onChange={(e) => onRememberDeviceChange(e.target.checked)}
+          />
+          <span>
+            <strong>この端末では次回からパスフレーズを省略する</strong>
+            <span className="hint">
+              非抽出型の暗号化鍵のみを端末内（IndexedDB）に保持します。共有端末ではオフにしてください。
+            </span>
+          </span>
+        </label>
+
         <hr style={{ width: '100%', border: 'none', borderTop: '1px solid var(--border-color)' }} />
 
         <form
           onSubmit={handlePassphraseSubmit}
           style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
         >
+          {userEmail && (
+            <input
+              type="email"
+              name="username"
+              autoComplete="username"
+              value={userEmail}
+              readOnly
+              tabIndex={-1}
+              aria-label="ログイン中のメールアドレス"
+              className="visually-hidden"
+            />
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 700 }}>
             <KeyRound size={17} aria-hidden="true" />
             <span>マスターパスフレーズの変更</span>
@@ -277,7 +308,7 @@ export function SettingsDialog({
             }}
           >
             <Lock size={16} aria-hidden="true" />
-            <span>今すぐロック（メモリ上の鍵を破棄）</span>
+            <span>今すぐロック（メモリ・端末キャッシュの鍵を破棄）</span>
           </button>
 
           <button

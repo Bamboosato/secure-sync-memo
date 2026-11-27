@@ -7,11 +7,16 @@ import {
   unlockWithPassphrase,
 } from '../lib/userKey';
 
+export interface UnlockResultOptions {
+  rememberDevice: boolean;
+  updatedKeyDoc?: UserKeyDocument;
+}
+
 interface UnlockScreenProps {
   uid: string;
   userEmail: string | null;
   keyDoc: UserKeyDocument;
-  onUnlock: (dek: CryptoKey, updatedKeyDoc?: UserKeyDocument) => void;
+  onUnlock: (dek: CryptoKey, options: UnlockResultOptions) => void;
   onSignOut: () => void;
 }
 
@@ -25,6 +30,7 @@ export function UnlockScreen({
   const [mode, setMode] = useState<'passphrase' | 'recovery'>('passphrase');
   const [passphrase, setPassphrase] = useState('');
   const [showPassphrase, setShowPassphrase] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(false);
 
   const [recoveryKey, setRecoveryKey] = useState('');
   const [newPassphrase, setNewPassphrase] = useState('');
@@ -45,7 +51,7 @@ export function UnlockScreen({
     try {
       const dek = await unlockWithPassphrase(keyDoc, passphrase);
       setPassphrase('');
-      onUnlock(dek);
+      onUnlock(dek, { rememberDevice });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'ロック解除に失敗しました。',
@@ -79,7 +85,7 @@ export function UnlockScreen({
       setRecoveryKey('');
       setNewPassphrase('');
       setConfirmNewPassphrase('');
-      onUnlock(dek, updatedDoc);
+      onUnlock(dek, { rememberDevice, updatedKeyDoc: updatedDoc });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'リカバリーキーでの復元に失敗しました。',
@@ -114,11 +120,25 @@ export function UnlockScreen({
 
         {mode === 'passphrase' ? (
           <form onSubmit={handleUnlockSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {userEmail && (
+              <input
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={userEmail}
+                readOnly
+                tabIndex={-1}
+                aria-label="ログイン中のメールアドレス"
+                className="visually-hidden"
+              />
+            )}
+
             <div className="field">
               <label htmlFor="unlock-passphrase">マスターパスフレーズ</label>
               <div className="input-row">
                 <input
                   id="unlock-passphrase"
+                  name="password"
                   type={showPassphrase ? 'text' : 'password'}
                   className="text-input"
                   value={passphrase}
@@ -141,6 +161,21 @@ export function UnlockScreen({
                 <span role="img" aria-label="Error">❌</span> マスターパスフレーズを入力してください。
               </div>
             </div>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={rememberDevice}
+                onChange={(e) => setRememberDevice(e.target.checked)}
+                disabled={isProcessing}
+              />
+              <span>
+                <strong>この端末では次回からパスフレーズを省略する</strong>
+                <span className="hint">
+                  個人用スマホ・PC 向け（共有端末ではオフにしてください）
+                </span>
+              </span>
+            </label>
 
             <button
               type="submit"
@@ -175,6 +210,19 @@ export function UnlockScreen({
           </form>
         ) : (
           <form onSubmit={handleRecoverySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {userEmail && (
+              <input
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={userEmail}
+                readOnly
+                tabIndex={-1}
+                aria-label="ログイン中のメールアドレス"
+                className="visually-hidden"
+              />
+            )}
+
             <div className="field">
               <label htmlFor="recovery-key-input">リカバリーキー</label>
               <span id="recovery-key-hint" className="hint">
@@ -204,6 +252,7 @@ export function UnlockScreen({
               </ul>
               <input
                 id="recovery-new-pass"
+                name="password"
                 type={showPassphrase ? 'text' : 'password'}
                 className="text-input"
                 value={newPassphrase}
@@ -236,6 +285,21 @@ export function UnlockScreen({
                 <span role="img" aria-label="Error">❌</span> 確認用の新しいパスフレーズを入力してください。
               </div>
             </div>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={rememberDevice}
+                onChange={(e) => setRememberDevice(e.target.checked)}
+                disabled={isProcessing}
+              />
+              <span>
+                <strong>この端末では次回からパスフレーズを省略する</strong>
+                <span className="hint">
+                  個人用スマホ・PC 向け（共有端末ではオフにしてください）
+                </span>
+              </span>
+            </label>
 
             <button
               type="submit"

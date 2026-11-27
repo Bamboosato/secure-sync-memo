@@ -111,6 +111,19 @@ export function SetupEncryptionScreen({
 
         {!pendingSetup ? (
           <form onSubmit={handlePrepare} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {userEmail && (
+              <input
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={userEmail}
+                readOnly
+                tabIndex={-1}
+                aria-label="ログイン中のメールアドレス"
+                className="visually-hidden"
+              />
+            )}
+
             <div className="field">
               <label htmlFor="setup-passphrase">マスターパスフレーズ</label>
               <ul id="setup-passphrase-rules" className="rules-list">
