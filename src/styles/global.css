@@ -687,11 +687,13 @@ button:focus-visible {
 
 .note-card.selected {
   background-color: var(--bg-subtle);
+  background-color: color-mix(in srgb, var(--color-brand) 10%, var(--bg-surface));
   border-color: var(--color-brand);
 }
 
 .note-section-pinned .note-card.selected {
   background-color: var(--bg-surface);
+  background-color: color-mix(in srgb, var(--color-brand) 10%, var(--bg-surface));
   border-color: var(--color-brand);
 }
 
@@ -749,13 +751,13 @@ button:focus-visible {
 
 .note-card:has(.note-card-main:focus-visible) {
   outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
+  outline-offset: -1px;
 }
 
 @supports not selector(:has(*)) {
   .note-card-main:focus-visible {
     outline: 2px solid var(--color-brand);
-    outline-offset: 2px;
+    outline-offset: -1px;
   }
 }
 

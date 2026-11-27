@@ -312,6 +312,19 @@ export function App() {
     setMobileView('editor');
   };
 
+  const handleKeyboardSelectNote = useCallback(
+    (noteId: string) => {
+      if (isDirty) return;
+      if (noteId === selectedNoteId && !isNewDraft) return;
+
+      lastDecryptedRef.current = null;
+      setIsNewDraft(false);
+      setDecryptError(null);
+      setSelectedNoteId(noteId);
+    },
+    [isDirty, selectedNoteId, isNewDraft],
+  );
+
   const handleCreateNew = () => {
     if (!confirmLeaveDirtyIfNeeded()) return;
 
@@ -604,6 +617,7 @@ export function App() {
           onSearchChange={setSearchQuery}
           onSelectTag={setSelectedTag}
           onSelectNote={handleSelectNote}
+          onKeyboardSelectNote={handleKeyboardSelectNote}
           onCreateNew={handleCreateNew}
           onTogglePin={(noteId) => void handleTogglePinNote(noteId)}
           onReorderNotes={(section, activeId, overId) =>
