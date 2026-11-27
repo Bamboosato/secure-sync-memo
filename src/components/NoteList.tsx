@@ -127,6 +127,7 @@ function SortableNoteCard({
     const restLeft = leftPanel.offsetWidth;
     swipeOpenSideRef.current = null;
     setSwipeOpenSide(null);
+    delete track.dataset.swipeBg;
 
     if (restLeft > 0) {
       track.scrollTo({ left: restLeft, behavior });
@@ -161,6 +162,7 @@ function SortableNoteCard({
       prevRestLeftRef.current = restLeft;
 
       if (restLeft === 0) {
+        delete track.dataset.swipeBg;
         if (swipeOpenSideRef.current !== null) {
           swipeOpenSideRef.current = null;
           setSwipeOpenSide(null);
@@ -192,9 +194,20 @@ function SortableNoteCard({
     if (!track || !leftPanel) return;
 
     const restLeft = leftPanel.offsetWidth;
-    if (restLeft === 0) return;
+    if (restLeft === 0) {
+      delete track.dataset.swipeBg;
+      return;
+    }
 
     const delta = track.scrollLeft - restLeft;
+    if (delta < -1) {
+      track.dataset.swipeBg = note.isPinned ? 'unpin' : 'pin';
+    } else if (delta > 1) {
+      track.dataset.swipeBg = 'delete';
+    } else {
+      delete track.dataset.swipeBg;
+    }
+
     let nextSide: 'left' | 'right' | null = null;
     if (delta < -12) {
       nextSide = 'left';
