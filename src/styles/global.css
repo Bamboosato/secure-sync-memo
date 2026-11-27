@@ -634,11 +634,10 @@ button:focus-visible {
   max-width: 100%;
 }
 
-.note-section-pinned {
-  padding: 0.45rem;
-  border-radius: 12px;
-  background-color: var(--bg-subtle);
-  border: 1px solid var(--border-color);
+.note-section-pinned + .note-section {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  border-top-color: color-mix(in srgb, var(--border-color) 65%, transparent);
 }
 
 .note-section-heading {
@@ -678,8 +677,8 @@ button:focus-visible {
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  border: 1px solid transparent;
-  background-color: transparent;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
   border-radius: 12px;
   padding: 0.25rem;
   display: grid;
@@ -689,27 +688,12 @@ button:focus-visible {
   scroll-margin: 0.5rem;
 }
 
-.note-section-pinned .note-card {
-  background-color: var(--bg-surface);
-  border-color: var(--border-color);
-}
-
 .note-card:hover {
   background-color: var(--bg-subtle);
 }
 
-.note-section-pinned .note-card:hover {
-  background-color: var(--bg-page);
-}
-
 .note-card.selected {
   background-color: var(--bg-subtle);
-  background-color: color-mix(in srgb, var(--color-brand) 10%, var(--bg-surface));
-  border-color: var(--color-brand);
-}
-
-.note-section-pinned .note-card.selected {
-  background-color: var(--bg-surface);
   background-color: color-mix(in srgb, var(--color-brand) 10%, var(--bg-surface));
   border-color: var(--color-brand);
 }
