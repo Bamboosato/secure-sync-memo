@@ -3,8 +3,8 @@ import {
   type Announcements,
   DndContext,
   type DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -12,12 +12,11 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import {
   SortableContext,
-  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Pin, Plus, Search, X } from 'lucide-react';
+import { Pin, Plus, Search, X } from 'lucide-react';
 import type { NoteListItem } from '../lib/notes';
 
 type NoteSectionKind = 'pinned' | 'unpinned';
@@ -60,6 +59,7 @@ interface SortableNoteCardProps {
   note: NoteListItem;
   isSelected: boolean;
   showReorderControls: boolean;
+  shouldIgnoreClick: () => boolean;
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
   onRegisterMainBtnRef: (noteId: string, el: HTMLButtonElement | null) => void;
@@ -70,16 +70,15 @@ function SortableNoteCard({
   note,
   isSelected,
   showReorderControls,
+  shouldIgnoreClick,
   onSelectNote,
   onTogglePin,
   onRegisterMainBtnRef,
   onMainKeyDown,
 }: SortableNoteCardProps) {
   const {
-    attributes,
     listeners,
     setNodeRef,
-    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -102,32 +101,22 @@ function SortableNoteCard({
         'note-card',
         isSelected ? 'selected' : '',
         isDragging ? 'is-dragging' : '',
-        !showReorderControls ? 'no-reorder' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      {showReorderControls && (
-        <button
-          ref={setActivatorNodeRef}
-          type="button"
-          className="note-drag-handle"
-          {...attributes}
-          {...listeners}
-          aria-label={`「${title}」をドラッグして並び替え`}
-          title="ドラッグして並び替え"
-        >
-          <GripVertical size={15} aria-hidden="true" />
-        </button>
-      )}
-
       <button
         ref={(el) => onRegisterMainBtnRef(note.id, el)}
         type="button"
         className="note-card-main"
-        onClick={() => onSelectNote(note.id)}
+        {...(showReorderControls ? listeners : undefined)}
+        onClick={() => {
+          if (shouldIgnoreClick()) return;
+          onSelectNote(note.id);
+        }}
         onKeyDown={(e) => onMainKeyDown(note.id, e)}
         aria-current={isSelected ? 'true' : undefined}
+        title={showReorderControls ? '長押しドラッグまたは Shift + ↑↓ で並び替え' : undefined}
       >
         <div className="note-card-title">{title}</div>
         <div className="note-card-meta">
@@ -192,13 +181,15 @@ function SortableNoteSection({
   onMainKeyDown,
 }: SortableNoteSectionProps) {
   const headingId = useId();
+  const justDraggedRef = useRef(false);
+  const resetDragFlagTimerRef = useRef<number | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+    useSensor(MouseSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
     }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 6 },
     }),
   );
 
@@ -208,11 +199,21 @@ function SortableNoteSection({
 
   const showReorderControls = canReorder && notes.length > 1;
 
+  const scheduleResetJustDragged = useCallback(() => {
+    if (resetDragFlagTimerRef.current !== null) {
+      window.clearTimeout(resetDragFlagTimerRef.current);
+    }
+    resetDragFlagTimerRef.current = window.setTimeout(() => {
+      justDraggedRef.current = false;
+      resetDragFlagTimerRef.current = null;
+    }, 120);
+  }, []);
+
   const announcements = useMemo<Announcements>(
     () => ({
       onDragStart({ active }) {
         const title = noteLabel(noteById.get(String(active.id)));
-        return `「${title}」の移動を開始しました。上下矢印キーで位置を変更し、SpaceキーまたはEnterキーで確定、Escapeキーでキャンセルします。`;
+        return `「${title}」の移動を開始しました`;
       },
       onDragOver({ active, over }) {
         const title = noteLabel(noteById.get(String(active.id)));
@@ -244,12 +245,25 @@ function SortableNoteSection({
     [noteById, indexById],
   );
 
+  const handleDragStart = () => {
+    if (resetDragFlagTimerRef.current !== null) {
+      window.clearTimeout(resetDragFlagTimerRef.current);
+      resetDragFlagTimerRef.current = null;
+    }
+    justDraggedRef.current = true;
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
+    scheduleResetJustDragged();
     const { active, over } = event;
     if (!over || active.id === over.id || !showReorderControls) {
       return;
     }
     onReorderNotes(section, String(active.id), String(over.id));
+  };
+
+  const handleDragCancel = () => {
+    scheduleResetJustDragged();
   };
 
   return (
@@ -270,14 +284,10 @@ function SortableNoteSection({
         sensors={sensors}
         collisionDetection={closestCenter}
         modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-        accessibility={{
-          announcements,
-          screenReaderInstructions: {
-            draggable:
-              'SpaceキーまたはEnterキーでメモの移動を開始し、上下矢印キーで移動、もう一度SpaceキーまたはEnterキーで確定します。',
-          },
-        }}
+        accessibility={{ announcements }}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
         <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
           <ol className="note-section-list" role="list">
@@ -287,6 +297,7 @@ function SortableNoteSection({
                 note={note}
                 isSelected={selectedNoteId === note.id}
                 showReorderControls={showReorderControls}
+                shouldIgnoreClick={() => justDraggedRef.current}
                 onSelectNote={onSelectNote}
                 onTogglePin={onTogglePin}
                 onRegisterMainBtnRef={onRegisterMainBtnRef}
@@ -333,9 +344,69 @@ export function NoteList({
     [pinnedNotes, unpinnedNotes],
   );
 
+  const announce = useCallback((message: string) => {
+    if (announceTimerRef.current !== null) {
+      window.clearTimeout(announceTimerRef.current);
+    }
+    setAnnouncement('');
+    announceTimerRef.current = window.setTimeout(() => {
+      setAnnouncement(message);
+      announceTimerRef.current = null;
+    }, 60);
+  }, []);
+
   const handleMainKeyDown = useCallback(
     (noteId: string, event: KeyboardEvent<HTMLButtonElement>) => {
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (event.shiftKey) {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+          return;
+        }
+        event.preventDefault();
+
+        if (!canReorder) {
+          return;
+        }
+
+        const pinnedIndex = pinnedNotes.findIndex((n) => n.id === noteId);
+        const isPinnedSection = pinnedIndex !== -1;
+        const section: NoteSectionKind = isPinnedSection ? 'pinned' : 'unpinned';
+        const sectionNotes = isPinnedSection ? pinnedNotes : unpinnedNotes;
+        const currentIndex = isPinnedSection
+          ? pinnedIndex
+          : unpinnedNotes.findIndex((n) => n.id === noteId);
+
+        if (currentIndex === -1 || sectionNotes.length <= 1) {
+          return;
+        }
+
+        const targetIndex = event.key === 'ArrowUp' ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= sectionNotes.length) {
+          return;
+        }
+
+        const currentNote = sectionNotes[currentIndex];
+        const targetNote = sectionNotes[targetIndex];
+        if (!currentNote || !targetNote) {
+          return;
+        }
+
+        onReorderNotes(section, noteId, targetNote.id);
+        const sectionLabel = isPinnedSection ? 'ピン止め' : 'その他のメモ';
+        announce(
+          `「${noteLabel(currentNote)}」を${sectionLabel}の ${targetIndex + 1} 番目に移動しました`,
+        );
+
+        window.requestAnimationFrame(() => {
+          const btn = mainBtnRefs.current.get(noteId);
+          if (btn) {
+            btn.focus({ preventScroll: true });
+            btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          }
+        });
         return;
       }
 
@@ -382,19 +453,16 @@ export function NoteList({
       }
       onKeyboardSelectNote(nextNote.id);
     },
-    [orderedVisibleNotes, onKeyboardSelectNote],
+    [
+      canReorder,
+      pinnedNotes,
+      unpinnedNotes,
+      orderedVisibleNotes,
+      onReorderNotes,
+      onKeyboardSelectNote,
+      announce,
+    ],
   );
-
-  const announce = useCallback((message: string) => {
-    if (announceTimerRef.current !== null) {
-      window.clearTimeout(announceTimerRef.current);
-    }
-    setAnnouncement('');
-    announceTimerRef.current = window.setTimeout(() => {
-      setAnnouncement(message);
-      announceTimerRef.current = null;
-    }, 60);
-  }, []);
 
   const handleTogglePinWithAnnouncement = useCallback(
     (note: NoteListItem) => {
@@ -410,6 +478,7 @@ export function NoteList({
   );
 
   const totalCount = pinnedNotes.length + unpinnedNotes.length;
+  const hasReorderableSection = canReorder && (pinnedNotes.length > 1 || unpinnedNotes.length > 1);
 
   return (
     <aside className="sidebar-pane" aria-label="メモ一覧">
@@ -527,6 +596,12 @@ export function NoteList({
           </>
         )}
       </div>
+
+      {hasReorderableSection && (
+        <div className="sidebar-footer-hint">
+          長押しドラッグ / Shift + ↑↓ でエリア内を並び替え
+        </div>
+      )}
     </aside>
   );
 }

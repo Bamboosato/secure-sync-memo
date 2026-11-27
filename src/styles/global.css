@@ -662,14 +662,10 @@ button:focus-visible {
   border-radius: 12px;
   padding: 0.25rem;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 0.15rem;
   scroll-margin: 0.5rem;
-}
-
-.note-card.no-reorder {
-  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .note-section-pinned .note-card {
@@ -705,44 +701,23 @@ button:focus-visible {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
 }
 
-.note-drag-handle {
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  padding: 0.25rem;
-  min-width: 26px;
-  min-height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  cursor: grab;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.note-drag-handle:hover,
-.note-drag-handle:focus-visible {
-  background-color: var(--bg-page);
-  color: var(--text-primary);
-}
-
-.note-card.is-dragging .note-drag-handle {
-  cursor: grabbing;
-  color: var(--color-brand);
-}
-
 .note-card-main {
   min-width: 0;
   text-align: left;
   border: none;
   background: transparent;
   border-radius: 8px;
-  padding: 0.45rem 0.35rem;
+  padding: 0.5rem 0.55rem;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.note-card.is-dragging .note-card-main {
+  cursor: grabbing;
 }
 
 .note-card-main:focus-visible {
@@ -792,19 +767,27 @@ button:focus-visible {
   opacity: 0.32;
 }
 
-.note-drag-handle,
 .note-pin-btn:not(.pinned) {
   opacity: 0.45;
   transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
-.note-card:is(:hover, :focus-within, .selected, .is-dragging) :is(.note-drag-handle, .note-pin-btn),
+.note-card:is(:hover, :focus-within, .selected, .is-dragging) .note-pin-btn,
 .note-pin-btn.pinned {
   opacity: 1;
 }
 
 .note-pin-btn.pinned {
   color: var(--color-brand);
+}
+
+.sidebar-footer-hint {
+  flex-shrink: 0;
+  padding: 0.45rem 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 .pin-icon-filled {
@@ -1039,13 +1022,11 @@ button:focus-visible {
 }
 
 @media (pointer: coarse) {
-  .note-drag-handle,
   .note-action-btn {
     min-width: 34px;
     min-height: 34px;
   }
 
-  .note-drag-handle,
   .note-pin-btn:not(.pinned) {
     opacity: 0.65;
   }
@@ -1053,7 +1034,6 @@ button:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .note-card,
-  .note-drag-handle,
   .note-pin-btn {
     transition: none !important;
   }
