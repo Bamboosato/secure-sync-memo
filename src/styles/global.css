@@ -698,17 +698,20 @@ button:focus-visible {
   width: 100%;
   min-width: 0;
   padding: 0.25rem;
+  background-color: var(--bg-surface);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 0.15rem;
 }
 
-.note-card:hover {
+.note-card:hover,
+.note-card:hover .note-card-body {
   background-color: var(--bg-subtle);
 }
 
-.note-card.selected {
+.note-card.selected,
+.note-card.selected .note-card-body {
   background-color: var(--bg-subtle);
   background-color: color-mix(in srgb, var(--color-brand) 10%, var(--bg-surface));
   border-color: var(--color-brand);
@@ -720,6 +723,10 @@ button:focus-visible {
   background-color: var(--bg-surface);
   border-color: var(--color-brand);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.note-card.is-dragging .note-card-body {
+  background-color: var(--bg-surface);
 }
 
 .note-card-main {
@@ -1090,7 +1097,21 @@ button:focus-visible {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
     overscroll-behavior: auto;
-    overscroll-behavior: chain;
+  }
+
+  .note-swipe-track[data-swipe-bg='pin'],
+  .note-card:has(.note-swipe-track[data-swipe-bg='pin']) {
+    background-color: var(--color-brand);
+  }
+
+  .note-swipe-track[data-swipe-bg='unpin'],
+  .note-card:has(.note-swipe-track[data-swipe-bg='unpin']) {
+    background-color: var(--text-secondary);
+  }
+
+  .note-swipe-track[data-swipe-bg='delete'],
+  .note-card:has(.note-swipe-track[data-swipe-bg='delete']) {
+    background-color: var(--color-danger);
   }
 
   .note-swipe-track::-webkit-scrollbar {
