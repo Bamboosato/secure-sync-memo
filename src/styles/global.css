@@ -743,28 +743,36 @@ button:focus-visible {
   gap: 0.3rem;
 }
 
-.note-card-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.2rem;
-  padding: 0.15rem 0.1rem;
+.note-card-main:focus-visible {
+  outline: none;
 }
 
-.note-move-buttons {
+.note-card:has(.note-card-main:focus-visible) {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@supports not selector(:has(*)) {
+  .note-card-main:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+}
+
+.note-card-actions {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
+  justify-content: center;
+  padding: 0 0.1rem;
 }
 
 .note-action-btn {
   border: 1px solid transparent;
   background: transparent;
   border-radius: 7px;
-  min-width: 26px;
-  min-height: 26px;
-  padding: 0.2rem;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0.25rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -780,6 +788,17 @@ button:focus-visible {
 
 .note-action-btn:disabled {
   opacity: 0.32;
+}
+
+.note-drag-handle,
+.note-pin-btn:not(.pinned) {
+  opacity: 0.45;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.note-card:is(:hover, :focus-within, .selected, .is-dragging) :is(.note-drag-handle, .note-pin-btn),
+.note-pin-btn.pinned {
+  opacity: 1;
 }
 
 .note-pin-btn.pinned {
@@ -1023,10 +1042,17 @@ button:focus-visible {
     min-width: 34px;
     min-height: 34px;
   }
+
+  .note-drag-handle,
+  .note-pin-btn:not(.pinned) {
+    opacity: 0.65;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .note-card {
+  .note-card,
+  .note-drag-handle,
+  .note-pin-btn {
     transition: none !important;
   }
 }
