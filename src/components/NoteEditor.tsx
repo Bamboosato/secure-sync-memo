@@ -1,9 +1,10 @@
-import { type KeyboardEvent, useEffect, useState } from 'react';
-import { ArrowLeft, Pin, Plus, Save, Tag, Trash2, X } from 'lucide-react';
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Eye, Pencil, Pin, Plus, Save, Tag, Trash2, X } from 'lucide-react';
 import { MarkdownPreview } from './MarkdownPreview';
 
 interface NoteEditorProps {
   hasSelection: boolean;
+  noteId: string | null;
   isNewDraft: boolean;
   isPinned: boolean;
   title: string;
@@ -25,6 +26,7 @@ interface NoteEditorProps {
 
 export function NoteEditor({
   hasSelection,
+  noteId,
   isNewDraft,
   isPinned,
   title,
@@ -43,8 +45,21 @@ export function NoteEditor({
   onBackToList,
   onCreateNew,
 }: NoteEditorProps) {
-  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
+  const [viewMode, setViewMode] = useState<'preview' | 'edit'>(() =>
+    isNewDraft ? 'edit' : 'preview',
+  );
   const [tagDraft, setTagDraft] = useState('');
+  const prevNoteRef = useRef({ noteId, isNewDraft });
+
+  useEffect(() => {
+    const prev = prevNoteRef.current;
+    if (isNewDraft && !prev.isNewDraft) {
+      setViewMode('edit');
+    } else if (!isNewDraft && noteId !== prev.noteId && !prev.isNewDraft) {
+      setViewMode('preview');
+    }
+    prevNoteRef.current = { noteId, isNewDraft };
+  }, [noteId, isNewDraft]);
 
   useEffect(() => {
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -104,20 +119,22 @@ export function NoteEditor({
           <button
             type="button"
             role="tab"
-            aria-selected={viewMode === 'edit'}
-            className={`editor-tab ${viewMode === 'edit' ? 'active' : ''}`}
-            onClick={() => setViewMode('edit')}
-          >
-            編集
-          </button>
-          <button
-            type="button"
-            role="tab"
             aria-selected={viewMode === 'preview'}
             className={`editor-tab ${viewMode === 'preview' ? 'active' : ''}`}
             onClick={() => setViewMode('preview')}
           >
-            プレビュー
+            <Eye size={14} aria-hidden="true" />
+            <span>プレビュー</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'edit'}
+            className={`editor-tab ${viewMode === 'edit' ? 'active' : ''}`}
+            onClick={() => setViewMode('edit')}
+          >
+            <Pencil size={14} aria-hidden="true" />
+            <span>編集</span>
           </button>
         </div>
 
@@ -148,65 +165,90 @@ export function NoteEditor({
           </div>
         )}
 
-        <input
-          type="text"
-          className="editor-title-input"
-          placeholder="タイトル（一覧検索用に平文保存されます）"
-          aria-label="メモのタイトル"
-          maxLength={500}
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-        />
+        {viewMode === 'preview' ? (
+          <>
+            <h1 className="editor-title-readonly">{title || '無題のメモ'}</h1>
 
-        <div className="editor-tags-bar" aria-label="タグ">
-          <Tag size={15} aria-hidden="true" style={{ color: 'var(--text-secondary)' }} />
-          {tags.map((tag) => (
-            <span key={tag} className="tag-chip">
-              <span>#{tag}</span>
-              <button
-                type="button"
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  padding: 0,
-                  display: 'inline-flex',
-                }}
-                onClick={() => onTagsChange(tags.filter((t) => t !== tag))}
-                aria-label={`タグ ${tag} を削除`}
-              >
-                <X size={13} />
-              </button>
-            </span>
-          ))}
-          {tags.length < 20 && (
+            {tags.length > 0 && (
+              <div className="editor-tags-bar editor-tags-readonly" aria-label="タグ">
+                <Tag size={15} aria-hidden="true" style={{ color: 'var(--text-secondary)' }} />
+                {tags.map((tag) => (
+                  <span key={tag} className="tag-chip">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {isDecrypting ? (
+              <div className="editor-empty">
+                <p>メモ本文を復号中...</p>
+              </div>
+            ) : (
+              <MarkdownPreview content={body} />
+            )}
+          </>
+        ) : (
+          <>
             <input
               type="text"
-              className="text-input tag-add-input"
-              placeholder="タグを追加 (Enter)"
-              aria-label="タグを追加"
-              maxLength={64}
-              value={tagDraft}
-              onChange={(e) => setTagDraft(e.target.value)}
-              onKeyDown={handleTagKeyDown}
-              onBlur={addTag}
+              className="editor-title-input"
+              placeholder="タイトル（一覧検索用に平文保存されます）"
+              aria-label="メモのタイトル"
+              maxLength={500}
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
             />
-          )}
-        </div>
 
-        {isDecrypting ? (
-          <div className="editor-empty">
-            <p>メモ本文を復号中...</p>
-          </div>
-        ) : viewMode === 'edit' ? (
-          <textarea
-            className="text-area editor-textarea"
-            placeholder="ここにメモを入力（この本文は AES-256-GCM で暗号化されて保存されます）..."
-            aria-label="メモ本文"
-            value={body}
-            onChange={(e) => onBodyChange(e.target.value)}
-          />
-        ) : (
-          <MarkdownPreview content={body} />
+            <div className="editor-tags-bar" aria-label="タグ">
+              <Tag size={15} aria-hidden="true" style={{ color: 'var(--text-secondary)' }} />
+              {tags.map((tag) => (
+                <span key={tag} className="tag-chip">
+                  <span>#{tag}</span>
+                  <button
+                    type="button"
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      padding: 0,
+                      display: 'inline-flex',
+                    }}
+                    onClick={() => onTagsChange(tags.filter((t) => t !== tag))}
+                    aria-label={`タグ ${tag} を削除`}
+                  >
+                    <X size={13} />
+                  </button>
+                </span>
+              ))}
+              {tags.length < 20 && (
+                <input
+                  type="text"
+                  className="text-input tag-add-input"
+                  placeholder="タグを追加 (Enter)"
+                  aria-label="タグを追加"
+                  maxLength={64}
+                  value={tagDraft}
+                  onChange={(e) => setTagDraft(e.target.value)}
+                  onKeyDown={handleTagKeyDown}
+                  onBlur={addTag}
+                />
+              )}
+            </div>
+
+            {isDecrypting ? (
+              <div className="editor-empty">
+                <p>メモ本文を復号中...</p>
+              </div>
+            ) : (
+              <textarea
+                className="text-area editor-textarea"
+                placeholder="ここにメモを入力（この本文は AES-256-GCM で暗号化されて保存されます）..."
+                aria-label="メモ本文"
+                value={body}
+                onChange={(e) => onBodyChange(e.target.value)}
+              />
+            )}
+          </>
         )}
       </div>
 
