@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { CheckCircle2, CloudOff, Loader2, RefreshCw } from 'lucide-react';
 
 export interface SyncStatusBadgeProps {
@@ -13,6 +14,21 @@ export function SyncStatusBadge({
   isSaving,
   hasPendingWrites,
 }: SyncStatusBadgeProps) {
+  const [showOnlinePending, setShowOnlinePending] = useState(false);
+
+  useEffect(() => {
+    if (!isOnline || isSaving || isDirty || !hasPendingWrites) {
+      setShowOnlinePending(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowOnlinePending(true);
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [isOnline, isSaving, isDirty, hasPendingWrites]);
+
   if (!isOnline) {
     const label =
       isDirty || hasPendingWrites ? 'オフライン（同期待ち）' : 'オフライン';
@@ -42,7 +58,7 @@ export function SyncStatusBadge({
     );
   }
 
-  if (hasPendingWrites) {
+  if (showOnlinePending) {
     return (
       <span className="sync-badge pending" role="status" aria-live="polite">
         <Loader2 size={14} className="spin" aria-hidden="true" />

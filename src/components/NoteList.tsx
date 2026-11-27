@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, useCallback, useId, useMemo, useRef, useState } from 'react';
 import {
   type Announcements,
   DndContext,
@@ -33,6 +33,7 @@ interface NoteListProps {
   onSearchChange: (value: string) => void;
   onSelectTag: (tag: string | null) => void;
   onSelectNote: (noteId: string) => void;
+  onKeyboardSelectNote: (noteId: string) => void;
   onCreateNew: () => void;
   onTogglePin: (noteId: string) => void;
   onReorderNotes: (section: NoteSectionKind, activeId: string, overId: string) => void;
@@ -61,6 +62,8 @@ interface SortableNoteCardProps {
   showReorderControls: boolean;
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
+  onRegisterMainBtnRef: (noteId: string, el: HTMLButtonElement | null) => void;
+  onMainKeyDown: (noteId: string, event: KeyboardEvent<HTMLButtonElement>) => void;
 }
 
 function SortableNoteCard({
@@ -69,6 +72,8 @@ function SortableNoteCard({
   showReorderControls,
   onSelectNote,
   onTogglePin,
+  onRegisterMainBtnRef,
+  onMainKeyDown,
 }: SortableNoteCardProps) {
   const {
     attributes,
@@ -117,19 +122,16 @@ function SortableNoteCard({
       )}
 
       <button
+        ref={(el) => onRegisterMainBtnRef(note.id, el)}
         type="button"
         className="note-card-main"
         onClick={() => onSelectNote(note.id)}
+        onKeyDown={(e) => onMainKeyDown(note.id, e)}
         aria-current={isSelected ? 'true' : undefined}
       >
         <div className="note-card-title">{title}</div>
         <div className="note-card-meta">
           <span>{formatUpdatedAt(note)}</span>
-          {note.hasPendingWrites && (
-            <span style={{ color: 'var(--color-warn)', fontWeight: 600 }}>
-              同期待ち
-            </span>
-          )}
         </div>
         {note.tags.length > 0 && (
           <div className="note-tags-inline">
@@ -172,6 +174,8 @@ interface SortableNoteSectionProps {
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
   onReorderNotes: (section: NoteSectionKind, activeId: string, overId: string) => void;
+  onRegisterMainBtnRef: (noteId: string, el: HTMLButtonElement | null) => void;
+  onMainKeyDown: (noteId: string, event: KeyboardEvent<HTMLButtonElement>) => void;
 }
 
 function SortableNoteSection({
@@ -184,6 +188,8 @@ function SortableNoteSection({
   onSelectNote,
   onTogglePin,
   onReorderNotes,
+  onRegisterMainBtnRef,
+  onMainKeyDown,
 }: SortableNoteSectionProps) {
   const headingId = useId();
 
@@ -283,6 +289,8 @@ function SortableNoteSection({
                 showReorderControls={showReorderControls}
                 onSelectNote={onSelectNote}
                 onTogglePin={onTogglePin}
+                onRegisterMainBtnRef={onRegisterMainBtnRef}
+                onMainKeyDown={onMainKeyDown}
               />
             ))}
           </ol>
@@ -303,12 +311,79 @@ export function NoteList({
   onSearchChange,
   onSelectTag,
   onSelectNote,
+  onKeyboardSelectNote,
   onCreateNew,
   onTogglePin,
   onReorderNotes,
 }: NoteListProps) {
   const [announcement, setAnnouncement] = useState('');
   const announceTimerRef = useRef<number | null>(null);
+  const mainBtnRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
+
+  const registerMainBtnRef = useCallback((noteId: string, el: HTMLButtonElement | null) => {
+    if (el) {
+      mainBtnRefs.current.set(noteId, el);
+    } else {
+      mainBtnRefs.current.delete(noteId);
+    }
+  }, []);
+
+  const orderedVisibleNotes = useMemo(
+    () => [...pinnedNotes, ...unpinnedNotes],
+    [pinnedNotes, unpinnedNotes],
+  );
+
+  const handleMainKeyDown = useCallback(
+    (noteId: string, event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+
+      if (
+        event.key !== 'ArrowDown' &&
+        event.key !== 'ArrowUp' &&
+        event.key !== 'Home' &&
+        event.key !== 'End'
+      ) {
+        return;
+      }
+
+      const currentIndex = orderedVisibleNotes.findIndex((note) => note.id === noteId);
+      if (currentIndex === -1 || orderedVisibleNotes.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+
+      let nextIndex = currentIndex;
+      if (event.key === 'ArrowDown') {
+        nextIndex = Math.min(orderedVisibleNotes.length - 1, currentIndex + 1);
+      } else if (event.key === 'ArrowUp') {
+        nextIndex = Math.max(0, currentIndex - 1);
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = orderedVisibleNotes.length - 1;
+      }
+
+      if (nextIndex === currentIndex) {
+        return;
+      }
+
+      const nextNote = orderedVisibleNotes[nextIndex];
+      if (!nextNote) {
+        return;
+      }
+
+      const nextButton = mainBtnRefs.current.get(nextNote.id);
+      if (nextButton) {
+        nextButton.focus({ preventScroll: true });
+        nextButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+      onKeyboardSelectNote(nextNote.id);
+    },
+    [orderedVisibleNotes, onKeyboardSelectNote],
+  );
 
   const announce = useCallback((message: string) => {
     if (announceTimerRef.current !== null) {
@@ -429,6 +504,8 @@ export function NoteList({
                 onSelectNote={onSelectNote}
                 onTogglePin={handleTogglePinWithAnnouncement}
                 onReorderNotes={onReorderNotes}
+                onRegisterMainBtnRef={registerMainBtnRef}
+                onMainKeyDown={handleMainKeyDown}
               />
             )}
 
@@ -443,6 +520,8 @@ export function NoteList({
                 onSelectNote={onSelectNote}
                 onTogglePin={handleTogglePinWithAnnouncement}
                 onReorderNotes={onReorderNotes}
+                onRegisterMainBtnRef={registerMainBtnRef}
+                onMainKeyDown={handleMainKeyDown}
               />
             )}
           </>
