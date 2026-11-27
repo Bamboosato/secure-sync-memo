@@ -75,7 +75,7 @@ export function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
 
   const decryptSeqRef = useRef(0);
@@ -134,7 +134,7 @@ export function App() {
     setNotesError(null);
     setMobileView('list');
     setSettingsOpen(false);
-    setDeleteDialogOpen(false);
+    setDeleteTarget(null);
   }, []);
 
   useEffect(() => {
@@ -383,23 +383,27 @@ export function App() {
   };
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!user || !selectedNoteId) return;
+    if (!user || !deleteTarget) return;
+    const deletingId = deleteTarget.id;
     setNotesError(null);
     try {
-      await softDeleteNote(user.uid, selectedNoteId);
-      lastDecryptedRef.current = null;
-      setSelectedNoteId(null);
-      setIsNewDraft(false);
-      setDraftTitle('');
-      setDraftTags([]);
-      setDraftBody('');
-      setDraftIsPinned(false);
-      setIsDirty(false);
-      setMobileView('list');
+      await softDeleteNote(user.uid, deletingId);
+      setDeleteTarget(null);
+      if (deletingId === selectedNoteId) {
+        lastDecryptedRef.current = null;
+        setSelectedNoteId(null);
+        setIsNewDraft(false);
+        setDraftTitle('');
+        setDraftTags([]);
+        setDraftBody('');
+        setDraftIsPinned(false);
+        setIsDirty(false);
+        setMobileView('list');
+      }
     } catch {
       setNotesError('メモの削除に失敗しました。');
     }
-  }, [user, selectedNoteId]);
+  }, [user, deleteTarget, selectedNoteId]);
 
   const handleManualRefresh = async () => {
     if (!user || isRefreshing) return;
@@ -672,6 +676,7 @@ export function App() {
           onKeyboardSelectNote={handleKeyboardSelectNote}
           onCreateNew={handleCreateNew}
           onTogglePin={(noteId) => void handleTogglePinNote(noteId)}
+          onDeleteRequestNote={(note) => setDeleteTarget({ id: note.id, title: note.title })}
           onReorderNotes={(section, activeId, overId) =>
             void handleReorderNotes(section, activeId, overId)
           }
@@ -679,6 +684,7 @@ export function App() {
 
         <NoteEditor
           hasSelection={hasSelection}
+          noteId={selectedNoteId}
           isNewDraft={isNewDraft}
           isPinned={draftIsPinned}
           title={draftTitle}
@@ -702,17 +708,24 @@ export function App() {
           }}
           onTogglePin={handleToggleEditorPin}
           onSave={() => void handleSaveNote()}
-          onDeleteRequest={() => setDeleteDialogOpen(true)}
+          onDeleteRequest={() => {
+            if (selectedNoteId) {
+              setDeleteTarget({
+                id: selectedNoteId,
+                title: draftTitle || selectedNote?.title || '',
+              });
+            }
+          }}
           onBackToList={() => setMobileView('list')}
           onCreateNew={handleCreateNew}
         />
       </main>
 
       <ConfirmDeleteDialog
-        open={deleteDialogOpen}
-        noteTitle={draftTitle}
+        open={deleteTarget !== null}
+        noteTitle={deleteTarget?.title ?? ''}
         onConfirm={() => void handleConfirmDelete()}
-        onClose={() => setDeleteDialogOpen(false)}
+        onClose={() => setDeleteTarget(null)}
       />
 
       <SettingsDialog

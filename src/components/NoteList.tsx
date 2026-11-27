@@ -1,4 +1,13 @@
-import { type KeyboardEvent, useCallback, useId, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   type Announcements,
   DndContext,
@@ -16,7 +25,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Pin, Plus, Search, X } from 'lucide-react';
+import { Pin, PinOff, Plus, Search, Trash2, X } from 'lucide-react';
 import type { NoteListItem } from '../lib/notes';
 
 type NoteSectionKind = 'pinned' | 'unpinned';
@@ -35,6 +44,7 @@ interface NoteListProps {
   onKeyboardSelectNote: (noteId: string) => void;
   onCreateNew: () => void;
   onTogglePin: (noteId: string) => void;
+  onDeleteRequestNote: (note: NoteListItem) => void;
   onReorderNotes: (section: NoteSectionKind, activeId: string, overId: string) => void;
 }
 
@@ -55,6 +65,11 @@ function noteLabel(note: NoteListItem | undefined): string {
   return note?.title || '無題のメモ';
 }
 
+const needsScrollInitialTargetFallback =
+  typeof globalThis.CSS?.supports === 'function'
+    ? !globalThis.CSS.supports('scroll-initial-target', 'nearest')
+    : true;
+
 interface SortableNoteCardProps {
   note: NoteListItem;
   isSelected: boolean;
@@ -62,8 +77,15 @@ interface SortableNoteCardProps {
   shouldIgnoreClick: () => boolean;
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
+  onDeleteRequestNote: (note: NoteListItem) => void;
   onRegisterMainBtnRef: (noteId: string, el: HTMLButtonElement | null) => void;
   onMainKeyDown: (noteId: string, event: KeyboardEvent<HTMLButtonElement>) => void;
+  onRegisterSwipeCloser: (
+    noteId: string,
+    closeFn: ((behavior?: 'instant' | 'smooth') => void) | null,
+  ) => void;
+  onSwipeOpened: (noteId: string) => void;
+  onCloseAllSwipes: (behavior?: 'instant' | 'smooth') => void;
 }
 
 function SortableNoteCard({
@@ -73,8 +95,12 @@ function SortableNoteCard({
   shouldIgnoreClick,
   onSelectNote,
   onTogglePin,
+  onDeleteRequestNote,
   onRegisterMainBtnRef,
   onMainKeyDown,
+  onRegisterSwipeCloser,
+  onSwipeOpened,
+  onCloseAllSwipes,
 }: SortableNoteCardProps) {
   const {
     listeners,
@@ -86,6 +112,104 @@ function SortableNoteCard({
     id: note.id,
     disabled: !showReorderControls,
   });
+
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const leftPanelRef = useRef<HTMLDivElement | null>(null);
+  const [swipeOpenSide, setSwipeOpenSide] = useState<'left' | 'right' | null>(null);
+  const swipeOpenSideRef = useRef<'left' | 'right' | null>(null);
+  const prevRestLeftRef = useRef(0);
+
+  const resetTrackToCenter = useCallback((behavior: 'instant' | 'smooth' = 'instant') => {
+    const track = trackRef.current;
+    const leftPanel = leftPanelRef.current;
+    if (!track || !leftPanel) return;
+
+    const restLeft = leftPanel.offsetWidth;
+    swipeOpenSideRef.current = null;
+    setSwipeOpenSide(null);
+
+    if (restLeft > 0) {
+      track.scrollTo({ left: restLeft, behavior });
+    }
+  }, []);
+
+  useEffect(() => {
+    onRegisterSwipeCloser(note.id, resetTrackToCenter);
+    return () => {
+      onRegisterSwipeCloser(note.id, null);
+    };
+  }, [note.id, resetTrackToCenter, onRegisterSwipeCloser]);
+
+  useLayoutEffect(() => {
+    const leftPanel = leftPanelRef.current;
+    if (leftPanel) {
+      prevRestLeftRef.current = leftPanel.offsetWidth;
+    }
+    resetTrackToCenter('instant');
+  }, [resetTrackToCenter]);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    const leftPanel = leftPanelRef.current;
+    if (!track || !leftPanel || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      const restLeft = leftPanel.offsetWidth;
+      const wasDesktop = prevRestLeftRef.current === 0;
+      prevRestLeftRef.current = restLeft;
+
+      if (restLeft === 0) {
+        if (swipeOpenSideRef.current !== null) {
+          swipeOpenSideRef.current = null;
+          setSwipeOpenSide(null);
+        }
+        return;
+      }
+
+      if (
+        (wasDesktop || needsScrollInitialTargetFallback) &&
+        swipeOpenSideRef.current === null
+      ) {
+        track.scrollTo({ left: restLeft, behavior: 'instant' });
+      }
+    });
+
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (isDragging) {
+      resetTrackToCenter('instant');
+    }
+  }, [isDragging, resetTrackToCenter]);
+
+  const handleTrackScroll = () => {
+    const track = trackRef.current;
+    const leftPanel = leftPanelRef.current;
+    if (!track || !leftPanel) return;
+
+    const restLeft = leftPanel.offsetWidth;
+    if (restLeft === 0) return;
+
+    const delta = track.scrollLeft - restLeft;
+    let nextSide: 'left' | 'right' | null = null;
+    if (delta < -12) {
+      nextSide = 'left';
+    } else if (delta > 12) {
+      nextSide = 'right';
+    }
+
+    if (nextSide !== swipeOpenSideRef.current) {
+      swipeOpenSideRef.current = nextSide;
+      setSwipeOpenSide(nextSide);
+      if (nextSide !== null) {
+        onSwipeOpened(note.id);
+      }
+    }
+  };
 
   const title = noteLabel(note);
   const style = {
@@ -105,49 +229,110 @@ function SortableNoteCard({
         .filter(Boolean)
         .join(' ')}
     >
-      <button
-        ref={(el) => onRegisterMainBtnRef(note.id, el)}
-        type="button"
-        className="note-card-main"
-        {...(showReorderControls ? listeners : undefined)}
-        onClick={() => {
-          if (shouldIgnoreClick()) return;
-          onSelectNote(note.id);
-        }}
-        onKeyDown={(e) => onMainKeyDown(note.id, e)}
-        aria-current={isSelected ? 'true' : undefined}
-        title={showReorderControls ? '長押しドラッグまたは Shift + ↑↓ で並び替え' : undefined}
+      <div
+        ref={trackRef}
+        className="note-swipe-track"
+        onScroll={handleTrackScroll}
       >
-        <div className="note-card-title">{title}</div>
-        <div className="note-card-meta">
-          <span>{formatUpdatedAt(note)}</span>
-        </div>
-        {note.tags.length > 0 && (
-          <div className="note-tags-inline">
-            {note.tags.slice(0, 4).map((tag) => (
-              <span key={tag} className="tag-chip">
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
-      </button>
-
-      <div className="note-card-actions">
-        <button
-          type="button"
-          className={`note-action-btn note-pin-btn ${note.isPinned ? 'pinned' : ''}`}
-          aria-pressed={note.isPinned}
-          aria-label={note.isPinned ? `「${title}」のピン止めを解除` : `「${title}」をピン止め`}
-          title={note.isPinned ? 'ピン止めを解除' : 'ピン止め'}
-          onClick={() => onTogglePin(note)}
+        <div
+          ref={leftPanelRef}
+          className="note-swipe-panel note-swipe-panel-pin"
+          aria-hidden={swipeOpenSide !== 'left'}
         >
-          <Pin
-            size={14}
-            aria-hidden="true"
-            className={note.isPinned ? 'pin-icon-filled' : undefined}
-          />
-        </button>
+          <button
+            type="button"
+            className={`note-swipe-btn ${note.isPinned ? 'note-swipe-btn-unpin' : 'note-swipe-btn-pin'}`}
+            tabIndex={swipeOpenSide === 'left' ? 0 : -1}
+            aria-label={note.isPinned ? `「${title}」のピン止めを解除` : `「${title}」をピン止め`}
+            onClick={() => {
+              resetTrackToCenter('smooth');
+              onTogglePin(note);
+            }}
+          >
+            {note.isPinned ? (
+              <>
+                <PinOff size={18} aria-hidden="true" />
+                <span>解除</span>
+              </>
+            ) : (
+              <>
+                <Pin size={18} aria-hidden="true" />
+                <span>ピン</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="note-card-body">
+          <button
+            ref={(el) => onRegisterMainBtnRef(note.id, el)}
+            type="button"
+            className="note-card-main"
+            {...(showReorderControls ? listeners : undefined)}
+            onClick={() => {
+              if (shouldIgnoreClick()) return;
+              if (swipeOpenSideRef.current !== null) {
+                resetTrackToCenter('smooth');
+                return;
+              }
+              onCloseAllSwipes('smooth');
+              onSelectNote(note.id);
+            }}
+            onKeyDown={(e) => onMainKeyDown(note.id, e)}
+            aria-current={isSelected ? 'true' : undefined}
+            title={showReorderControls ? '長押しドラッグまたは Shift + ↑↓ で並び替え' : undefined}
+          >
+            <div className="note-card-title">{title}</div>
+            <div className="note-card-meta">
+              <span>{formatUpdatedAt(note)}</span>
+            </div>
+            {note.tags.length > 0 && (
+              <div className="note-tags-inline">
+                {note.tags.slice(0, 4).map((tag) => (
+                  <span key={tag} className="tag-chip">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </button>
+
+          <div className="note-card-actions">
+            <button
+              type="button"
+              className={`note-action-btn note-pin-btn ${note.isPinned ? 'pinned' : ''}`}
+              aria-pressed={note.isPinned}
+              aria-label={note.isPinned ? `「${title}」のピン止めを解除` : `「${title}」をピン止め`}
+              title={note.isPinned ? 'ピン止めを解除' : 'ピン止め'}
+              onClick={() => onTogglePin(note)}
+            >
+              <Pin
+                size={14}
+                aria-hidden="true"
+                className={note.isPinned ? 'pin-icon-filled' : undefined}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="note-swipe-panel note-swipe-panel-delete"
+          aria-hidden={swipeOpenSide !== 'right'}
+        >
+          <button
+            type="button"
+            className="note-swipe-btn note-swipe-btn-delete"
+            tabIndex={swipeOpenSide === 'right' ? 0 : -1}
+            aria-label={`「${title}」を削除`}
+            onClick={() => {
+              resetTrackToCenter('smooth');
+              onDeleteRequestNote(note);
+            }}
+          >
+            <Trash2 size={18} aria-hidden="true" />
+            <span>削除</span>
+          </button>
+        </div>
       </div>
     </li>
   );
@@ -162,9 +347,16 @@ interface SortableNoteSectionProps {
   canReorder: boolean;
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
+  onDeleteRequestNote: (note: NoteListItem) => void;
   onReorderNotes: (section: NoteSectionKind, activeId: string, overId: string) => void;
   onRegisterMainBtnRef: (noteId: string, el: HTMLButtonElement | null) => void;
   onMainKeyDown: (noteId: string, event: KeyboardEvent<HTMLButtonElement>) => void;
+  onRegisterSwipeCloser: (
+    noteId: string,
+    closeFn: ((behavior?: 'instant' | 'smooth') => void) | null,
+  ) => void;
+  onSwipeOpened: (noteId: string) => void;
+  onCloseAllSwipes: (behavior?: 'instant' | 'smooth') => void;
 }
 
 function SortableNoteSection({
@@ -176,9 +368,13 @@ function SortableNoteSection({
   canReorder,
   onSelectNote,
   onTogglePin,
+  onDeleteRequestNote,
   onReorderNotes,
   onRegisterMainBtnRef,
   onMainKeyDown,
+  onRegisterSwipeCloser,
+  onSwipeOpened,
+  onCloseAllSwipes,
 }: SortableNoteSectionProps) {
   const headingId = useId();
   const justDraggedRef = useRef(false);
@@ -251,6 +447,7 @@ function SortableNoteSection({
       resetDragFlagTimerRef.current = null;
     }
     justDraggedRef.current = true;
+    onCloseAllSwipes('instant');
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -300,8 +497,12 @@ function SortableNoteSection({
                 shouldIgnoreClick={() => justDraggedRef.current}
                 onSelectNote={onSelectNote}
                 onTogglePin={onTogglePin}
+                onDeleteRequestNote={onDeleteRequestNote}
                 onRegisterMainBtnRef={onRegisterMainBtnRef}
                 onMainKeyDown={onMainKeyDown}
+                onRegisterSwipeCloser={onRegisterSwipeCloser}
+                onSwipeOpened={onSwipeOpened}
+                onCloseAllSwipes={onCloseAllSwipes}
               />
             ))}
           </ol>
@@ -325,17 +526,52 @@ export function NoteList({
   onKeyboardSelectNote,
   onCreateNew,
   onTogglePin,
+  onDeleteRequestNote,
   onReorderNotes,
 }: NoteListProps) {
   const [announcement, setAnnouncement] = useState('');
   const announceTimerRef = useRef<number | null>(null);
   const mainBtnRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
+  const swipeClosersRef = useRef<Map<string, (behavior?: 'instant' | 'smooth') => void>>(
+    new Map(),
+  );
+  const activeSwipeIdRef = useRef<string | null>(null);
 
   const registerMainBtnRef = useCallback((noteId: string, el: HTMLButtonElement | null) => {
     if (el) {
       mainBtnRefs.current.set(noteId, el);
     } else {
       mainBtnRefs.current.delete(noteId);
+    }
+  }, []);
+
+  const registerSwipeCloser = useCallback(
+    (noteId: string, closeFn: ((behavior?: 'instant' | 'smooth') => void) | null) => {
+      if (closeFn) {
+        swipeClosersRef.current.set(noteId, closeFn);
+      } else {
+        swipeClosersRef.current.delete(noteId);
+        if (activeSwipeIdRef.current === noteId) {
+          activeSwipeIdRef.current = null;
+        }
+      }
+    },
+    [],
+  );
+
+  const handleSwipeOpened = useCallback((openedNoteId: string) => {
+    const prevId = activeSwipeIdRef.current;
+    if (prevId && prevId !== openedNoteId) {
+      swipeClosersRef.current.get(prevId)?.('smooth');
+    }
+    activeSwipeIdRef.current = openedNoteId;
+  }, []);
+
+  const handleCloseAllSwipes = useCallback((behavior: 'instant' | 'smooth' = 'smooth') => {
+    const activeId = activeSwipeIdRef.current;
+    if (activeId) {
+      swipeClosersRef.current.get(activeId)?.(behavior);
+      activeSwipeIdRef.current = null;
     }
   }, []);
 
@@ -572,9 +808,13 @@ export function NoteList({
                 canReorder={canReorder}
                 onSelectNote={onSelectNote}
                 onTogglePin={handleTogglePinWithAnnouncement}
+                onDeleteRequestNote={onDeleteRequestNote}
                 onReorderNotes={onReorderNotes}
                 onRegisterMainBtnRef={registerMainBtnRef}
                 onMainKeyDown={handleMainKeyDown}
+                onRegisterSwipeCloser={registerSwipeCloser}
+                onSwipeOpened={handleSwipeOpened}
+                onCloseAllSwipes={handleCloseAllSwipes}
               />
             )}
 
@@ -588,9 +828,13 @@ export function NoteList({
                 canReorder={canReorder}
                 onSelectNote={onSelectNote}
                 onTogglePin={handleTogglePinWithAnnouncement}
+                onDeleteRequestNote={onDeleteRequestNote}
                 onReorderNotes={onReorderNotes}
                 onRegisterMainBtnRef={registerMainBtnRef}
                 onMainKeyDown={handleMainKeyDown}
+                onRegisterSwipeCloser={registerSwipeCloser}
+                onSwipeOpened={handleSwipeOpened}
+                onCloseAllSwipes={handleCloseAllSwipes}
               />
             )}
           </>
