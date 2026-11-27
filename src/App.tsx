@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type User, onAuthStateChanged } from 'firebase/auth';
 import { Lock, RefreshCw, Settings } from 'lucide-react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import { ConfirmDeleteDialog } from './components/ConfirmDeleteDialog';
 import { LoginScreen } from './components/LoginScreen';
 import { NoteEditor } from './components/NoteEditor';
@@ -9,6 +10,7 @@ import { SettingsDialog, type SyncMode } from './components/SettingsDialog';
 import { SetupEncryptionScreen } from './components/SetupEncryptionScreen';
 import { SyncStatusBadge } from './components/SyncStatusBadge';
 import { UnlockScreen } from './components/UnlockScreen';
+import { UpdateBanner } from './components/UpdateBanner';
 import { auth, secureSignOut } from './lib/firebase';
 import { initFormValidationSync } from './lib/formValidation';
 import {
@@ -74,9 +76,47 @@ export function App() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isUpdatingApp, setIsUpdatingApp] = useState(false);
 
   const decryptSeqRef = useRef(0);
   const lastDecryptedRef = useRef<{ id: string; iv: string; ciphertext: string } | null>(null);
+  const swRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
+
+  const {
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    immediate: true,
+    onRegisteredSW(_swUrl, registration) {
+      swRegistrationRef.current = registration ?? null;
+    },
+  });
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void swRegistrationRef.current?.update();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  const handleApplyAppUpdate = useCallback(async () => {
+    if (isUpdatingApp) return;
+    if (isDirty && !window.confirm('未保存の変更があります。破棄してアプリを更新しますか？')) {
+      return;
+    }
+
+    setIsUpdatingApp(true);
+    try {
+      await updateServiceWorker(true);
+    } catch {
+      setIsUpdatingApp(false);
+    }
+  }, [isUpdatingApp, isDirty, updateServiceWorker]);
 
   const clearSessionState = useCallback(() => {
     lastDecryptedRef.current = null;
@@ -488,22 +528,34 @@ export function App() {
     [notes],
   );
 
+  const renderWithUpdateBanner = (content: ReactNode) => (
+    <>
+      {content}
+      <UpdateBanner
+        visible={needRefresh}
+        isUpdating={isUpdatingApp}
+        onUpdate={() => void handleApplyAppUpdate()}
+        onDismiss={() => setNeedRefresh(false)}
+      />
+    </>
+  );
+
   if (!authReady || keyLoading) {
-    return (
+    return renderWithUpdateBanner(
       <main className="center-screen">
         <div className="auth-card" style={{ textAlign: 'center' }}>
           <p style={{ margin: 0 }}>読み込み中...</p>
         </div>
-      </main>
+      </main>,
     );
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return renderWithUpdateBanner(<LoginScreen />);
   }
 
   if (keyError) {
-    return (
+    return renderWithUpdateBanner(
       <main className="center-screen">
         <section className="auth-card">
           <div className="alert alert-error" role="alert">
@@ -516,12 +568,12 @@ export function App() {
             ログアウト
           </button>
         </section>
-      </main>
+      </main>,
     );
   }
 
   if (!keyDoc) {
-    return (
+    return renderWithUpdateBanner(
       <SetupEncryptionScreen
         uid={user.uid}
         userEmail={user.email}
@@ -530,12 +582,12 @@ export function App() {
           setDek(sessionDek);
         }}
         onSignOut={handleSignOut}
-      />
+      />,
     );
   }
 
   if (!dek) {
-    return (
+    return renderWithUpdateBanner(
       <UnlockScreen
         uid={user.uid}
         userEmail={user.email}
@@ -545,13 +597,13 @@ export function App() {
           setDek(unlockedDek);
         }}
         onSignOut={handleSignOut}
-      />
+      />,
     );
   }
 
   const hasSelection = Boolean(selectedNoteId || isNewDraft);
 
-  return (
+  return renderWithUpdateBanner(
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header-left">
@@ -675,7 +727,7 @@ export function App() {
         onSignOut={handleSignOut}
         onClose={() => setSettingsOpen(false)}
       />
-    </div>
+    </div>,
   );
 }
 

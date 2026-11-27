@@ -1083,3 +1083,49 @@ button:focus-visible {
     transform: rotate(360deg);
   }
 }
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 50;
+  width: min(calc(100vw - 1.5rem), 460px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--color-brand);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28);
+}
+
+.update-banner-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.update-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+
+.update-banner-btn {
+  min-height: 34px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8125rem;
+}
+
+.update-banner-close {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0.35rem;
+}
