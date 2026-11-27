@@ -1,0 +1,226 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // This security rules file assumes the following data structures:
+    //
+    // Collection: users
+    // Document ID: {userId} (must match Firebase Auth request.auth.uid)
+    // Purpose: Stores per-user E2EE key-derivation parameters and wrapped DEK.
+    // Fields:
+    //   - kdfSalt: string (required, 1..256 chars) - Base64 PBKDF2 salt
+    //   - kdfIterations: int (required, 600000..5000000) - PBKDF2 iteration count
+    //   - wrappedDek: map (required, keys only ['iv', 'data'])
+    //       - iv: string (required, 1..1024 chars)
+    //       - data: string (required, 1..1024 chars)
+    //   - keyCheck: map (required, keys only ['iv', 'data'])
+    //       - iv: string (required, 1..1024 chars)
+    //       - data: string (required, 1..1024 chars)
+    //   - updatedAt: timestamp (required) - Last update timestamp
+    //
+    // Subcollection: users/{userId}/notes
+    // Document ID: {noteId}
+    // Purpose: Stores user's encrypted memos with plaintext search metadata.
+    // Fields:
+    //   - title: string (required, 0..500 chars) - Plaintext title for listing/search
+    //   - tags: list (required, 0..20 items, each string 0..64 chars) - Classification tags
+    //   - iv: string (required, 1..256 chars) - Base64 AES-GCM IV
+    //   - ciphertext: string (required, 1..1000000 chars) - Base64 E2EE payload
+    //   - encVersion: int (required, == 1) - Encryption format version
+    //   - createdAt: timestamp (required, immutable on update) - Creation timestamp
+    //   - updatedAt: timestamp (required) - Last update timestamp (LWW sync)
+    //   - isDeleted: bool (required) - Soft-delete flag for offline sync
+    //
+    // Note on subcollection parent checks:
+    //   We intentionally do not enforce exists(/databases/$(database)/documents/users/$(userId))
+    //   on /notes/{noteId} so Spark-plan read quotas are not doubled per operation and
+    //   offline/queued client writes remain resilient. Access remains strictly owner-only.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the request is from an authenticated user.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the path identified by userId.
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verify UID field (if present) matches caller on create.
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Verify UID field (if present) cannot be modified on update.
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate that all required fields exist on the resulting document.
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the resulting document contains only allowed fields.
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate that specified immutable fields have not changed on update.
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate string type and inclusive byte/character length bounds.
+    function validStringLength(value, minLen, maxLen) {
+      return value is string &&
+        value.size() >= minLen &&
+        value.size() <= maxLen;
+    }
+
+    // Validate an encrypted envelope blob ({ iv: string, data: string }).
+    function isValidEncryptedBlob(blob) {
+      return blob is map &&
+        blob.keys().hasOnly(['iv', 'data']) &&
+        blob.keys().hasAll(['iv', 'data']) &&
+        validStringLength(blob.iv, 1, 1024) &&
+        validStringLength(blob.data, 1, 1024);
+    }
+
+    // Validate a single tag element at index idx (short-circuits when out of bounds).
+    function isValidTagAt(tags, idx) {
+      return tags.size() <= idx ||
+        (tags[idx] is string && tags[idx].size() <= 64);
+    }
+
+    // Validate tags list: max 20 items, every element a bounded string.
+    function isValidTagsList(tags) {
+      return tags is list &&
+        tags.size() <= 20 &&
+        isValidTagAt(tags, 0) &&
+        isValidTagAt(tags, 1) &&
+        isValidTagAt(tags, 2) &&
+        isValidTagAt(tags, 3) &&
+        isValidTagAt(tags, 4) &&
+        isValidTagAt(tags, 5) &&
+        isValidTagAt(tags, 6) &&
+        isValidTagAt(tags, 7) &&
+        isValidTagAt(tags, 8) &&
+        isValidTagAt(tags, 9) &&
+        isValidTagAt(tags, 10) &&
+        isValidTagAt(tags, 11) &&
+        isValidTagAt(tags, 12) &&
+        isValidTagAt(tags, 13) &&
+        isValidTagAt(tags, 14) &&
+        isValidTagAt(tags, 15) &&
+        isValidTagAt(tags, 16) &&
+        isValidTagAt(tags, 17) &&
+        isValidTagAt(tags, 18) &&
+        isValidTagAt(tags, 19);
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update)
+    // ===============================================================
+
+    function isValidUserKeyConfig(data) {
+      return hasOnlyAllowedFields([
+          'kdfSalt',
+          'kdfIterations',
+          'wrappedDek',
+          'keyCheck',
+          'updatedAt'
+        ]) &&
+        hasRequiredFields([
+          'kdfSalt',
+          'kdfIterations',
+          'wrappedDek',
+          'keyCheck',
+          'updatedAt'
+        ]) &&
+        validStringLength(data.kdfSalt, 1, 256) &&
+        data.kdfIterations is int &&
+        data.kdfIterations >= 600000 &&
+        data.kdfIterations <= 5000000 &&
+        isValidEncryptedBlob(data.wrappedDek) &&
+        isValidEncryptedBlob(data.keyCheck) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNote(data) {
+      return hasOnlyAllowedFields([
+          'title',
+          'tags',
+          'iv',
+          'ciphertext',
+          'encVersion',
+          'createdAt',
+          'updatedAt',
+          'isDeleted'
+        ]) &&
+        hasRequiredFields([
+          'title',
+          'tags',
+          'iv',
+          'ciphertext',
+          'encVersion',
+          'createdAt',
+          'updatedAt',
+          'isDeleted'
+        ]) &&
+        validStringLength(data.title, 0, 500) &&
+        isValidTagsList(data.tags) &&
+        validStringLength(data.iv, 1, 256) &&
+        validStringLength(data.ciphertext, 1, 1000000) &&
+        data.encVersion is int &&
+        data.encVersion == 1 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.isDeleted is bool;
+    }
+
+    // ===============================================================
+    // Default Deny & Collection Rules
+    // ===============================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        uidUnchanged() &&
+        isValidUserKeyConfig(request.resource.data);
+      allow update: if isOwner(userId) &&
+        uidNotModified() &&
+        isValidUserKeyConfig(request.resource.data);
+      allow delete: if isOwner(userId);
+
+      match /notes/{noteId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          uidUnchanged() &&
+          isValidNote(request.resource.data);
+        allow update: if isOwner(userId) &&
+          uidNotModified() &&
+          isValidNote(request.resource.data) &&
+          areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
