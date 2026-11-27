@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowDown, ArrowUp, GripVertical, Pin, Plus, Search, X } from 'lucide-react';
+import { GripVertical, Pin, Plus, Search, X } from 'lucide-react';
 import type { NoteListItem } from '../lib/notes';
 
 type NoteSectionKind = 'pinned' | 'unpinned';
@@ -57,30 +57,18 @@ function noteLabel(note: NoteListItem | undefined): string {
 
 interface SortableNoteCardProps {
   note: NoteListItem;
-  index: number;
-  totalCount: number;
   isSelected: boolean;
   showReorderControls: boolean;
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
-  onMoveByOffset: (index: number, delta: -1 | 1) => void;
-  onRegisterMoveButtonRef: (
-    noteId: string,
-    direction: 'up' | 'down',
-    el: HTMLButtonElement | null,
-  ) => void;
 }
 
 function SortableNoteCard({
   note,
-  index,
-  totalCount,
   isSelected,
   showReorderControls,
   onSelectNote,
   onTogglePin,
-  onMoveByOffset,
-  onRegisterMoveButtonRef,
 }: SortableNoteCardProps) {
   const {
     attributes,
@@ -169,33 +157,6 @@ function SortableNoteCard({
             className={note.isPinned ? 'pin-icon-filled' : undefined}
           />
         </button>
-
-        {showReorderControls && (
-          <div className="note-move-buttons">
-            <button
-              ref={(el) => onRegisterMoveButtonRef(note.id, 'up', el)}
-              type="button"
-              className="note-action-btn"
-              disabled={index === 0}
-              aria-label={`「${title}」を上へ移動`}
-              title="上へ移動"
-              onClick={() => onMoveByOffset(index, -1)}
-            >
-              <ArrowUp size={13} aria-hidden="true" />
-            </button>
-            <button
-              ref={(el) => onRegisterMoveButtonRef(note.id, 'down', el)}
-              type="button"
-              className="note-action-btn"
-              disabled={index === totalCount - 1}
-              aria-label={`「${title}」を下へ移動`}
-              title="下へ移動"
-              onClick={() => onMoveByOffset(index, 1)}
-            >
-              <ArrowDown size={13} aria-hidden="true" />
-            </button>
-          </div>
-        )}
       </div>
     </li>
   );
@@ -211,7 +172,6 @@ interface SortableNoteSectionProps {
   onSelectNote: (noteId: string) => void;
   onTogglePin: (note: NoteListItem) => void;
   onReorderNotes: (section: NoteSectionKind, activeId: string, overId: string) => void;
-  onAnnounce: (message: string) => void;
 }
 
 function SortableNoteSection({
@@ -224,21 +184,8 @@ function SortableNoteSection({
   onSelectNote,
   onTogglePin,
   onReorderNotes,
-  onAnnounce,
 }: SortableNoteSectionProps) {
   const headingId = useId();
-  const moveBtnRefs = useRef<Map<string, { up: HTMLButtonElement | null; down: HTMLButtonElement | null }>>(
-    new Map(),
-  );
-
-  const registerMoveButtonRef = useCallback(
-    (noteId: string, direction: 'up' | 'down', el: HTMLButtonElement | null) => {
-      const existing = moveBtnRefs.current.get(noteId) ?? { up: null, down: null };
-      existing[direction] = el;
-      moveBtnRefs.current.set(noteId, existing);
-    },
-    [],
-  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -299,36 +246,6 @@ function SortableNoteSection({
     onReorderNotes(section, String(active.id), String(over.id));
   };
 
-  const handleMoveByOffset = (index: number, delta: -1 | 1) => {
-    const targetIndex = index + delta;
-    const current = notes[index];
-    const target = notes[targetIndex];
-    if (!current || !target || !showReorderControls) {
-      return;
-    }
-
-    onReorderNotes(section, current.id, target.id);
-    onAnnounce(`「${noteLabel(current)}」を ${targetIndex + 1} 番目に移動しました`);
-
-    window.requestAnimationFrame(() => {
-      const refs = moveBtnRefs.current.get(current.id);
-      if (!refs) return;
-      if (delta === -1) {
-        if (targetIndex === 0) {
-          refs.down?.focus({ preventScroll: true });
-        } else {
-          refs.up?.focus({ preventScroll: true });
-        }
-      } else {
-        if (targetIndex === notes.length - 1) {
-          refs.up?.focus({ preventScroll: true });
-        } else {
-          refs.down?.focus({ preventScroll: true });
-        }
-      }
-    });
-  };
-
   return (
     <section
       className={`note-section ${section === 'pinned' ? 'note-section-pinned' : ''}`}
@@ -358,18 +275,14 @@ function SortableNoteSection({
       >
         <SortableContext items={noteIds} strategy={verticalListSortingStrategy}>
           <ol className="note-section-list" role="list">
-            {notes.map((note, index) => (
+            {notes.map((note) => (
               <SortableNoteCard
                 key={note.id}
                 note={note}
-                index={index}
-                totalCount={notes.length}
                 isSelected={selectedNoteId === note.id}
                 showReorderControls={showReorderControls}
                 onSelectNote={onSelectNote}
                 onTogglePin={onTogglePin}
-                onMoveByOffset={handleMoveByOffset}
-                onRegisterMoveButtonRef={registerMoveButtonRef}
               />
             ))}
           </ol>
@@ -516,7 +429,6 @@ export function NoteList({
                 onSelectNote={onSelectNote}
                 onTogglePin={handleTogglePinWithAnnouncement}
                 onReorderNotes={onReorderNotes}
-                onAnnounce={announce}
               />
             )}
 
@@ -531,7 +443,6 @@ export function NoteList({
                 onSelectNote={onSelectNote}
                 onTogglePin={handleTogglePinWithAnnouncement}
                 onReorderNotes={onReorderNotes}
-                onAnnounce={announce}
               />
             )}
           </>
