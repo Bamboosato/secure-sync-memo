@@ -7,6 +7,7 @@ import {
   persistentMultipleTabManager,
   terminate,
 } from 'firebase/firestore';
+import { clearCachedDek } from './dekCache';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -72,6 +73,7 @@ export async function signInWithGoogle(): Promise<void> {
  */
 export async function secureSignOut(beforeSignOut?: () => void): Promise<void> {
   beforeSignOut?.();
+  await clearCachedDek().catch(() => undefined);
   await signOut(auth);
   try {
     await terminate(db);
