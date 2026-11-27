@@ -598,28 +598,215 @@ button:focus-visible {
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
+}
+
+.reorder-disabled-hint {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  background-color: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.note-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.note-section-pinned {
+  padding: 0.45rem;
+  border-radius: 12px;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.note-section-heading {
+  margin: 0;
+  padding: 0.15rem 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.note-section-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background-color: var(--bg-page);
+  border: 1px solid var(--border-color);
+  font-size: 0.6875rem;
+}
+
+.note-section-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
 }
 
 .note-card {
   width: 100%;
-  text-align: left;
   border: 1px solid transparent;
   background-color: transparent;
   border-radius: 12px;
-  padding: 0.75rem 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  padding: 0.25rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 0.15rem;
+  scroll-margin: 0.5rem;
+}
+
+.note-card.no-reorder {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.note-section-pinned .note-card {
+  background-color: var(--bg-surface);
+  border-color: var(--border-color);
 }
 
 .note-card:hover {
   background-color: var(--bg-subtle);
 }
 
+.note-section-pinned .note-card:hover {
+  background-color: var(--bg-page);
+}
+
 .note-card.selected {
   background-color: var(--bg-subtle);
   border-color: var(--color-brand);
+}
+
+.note-section-pinned .note-card.selected {
+  background-color: var(--bg-surface);
+  border-color: var(--color-brand);
+}
+
+.note-card.is-dragging {
+  position: relative;
+  z-index: 2;
+  background-color: var(--bg-surface);
+  border-color: var(--color-brand);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.note-drag-handle {
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 0.25rem;
+  min-width: 26px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.note-drag-handle:hover,
+.note-drag-handle:focus-visible {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+}
+
+.note-card.is-dragging .note-drag-handle {
+  cursor: grabbing;
+  color: var(--color-brand);
+}
+
+.note-card-main {
+  min-width: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 0.45rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.note-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.2rem;
+  padding: 0.15rem 0.1rem;
+}
+
+.note-move-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.note-action-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 7px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.note-action-btn:hover:not(:disabled),
+.note-action-btn:focus-visible:not(:disabled) {
+  background-color: var(--bg-page);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.note-action-btn:disabled {
+  opacity: 0.32;
+}
+
+.note-pin-btn.pinned {
+  color: var(--color-brand);
+}
+
+.pin-icon-filled {
+  fill: currentColor;
+}
+
+.btn-pin-toggle {
+  min-height: 34px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8125rem;
+}
+
+.btn-pin-toggle.active {
+  background-color: var(--color-brand);
+  border-color: var(--color-brand);
+  color: var(--color-brand-text);
+}
+
+.editor-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
 }
 
 .note-card-title {
@@ -823,6 +1010,24 @@ button:focus-visible {
 
   .app-logo-text {
     font-size: 0.925rem;
+  }
+
+  .editor-shortcut-hint {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .note-drag-handle,
+  .note-action-btn {
+    min-width: 34px;
+    min-height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-card {
+    transition: none !important;
   }
 }
 

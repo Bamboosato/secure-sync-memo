@@ -18,7 +18,15 @@ import {
   saveNote,
   softDeleteNote,
   subscribeToNotes,
+  updateNotePinState,
+  updateNoteSortOrders,
 } from './lib/notes';
+import {
+  computeReorderUpdate,
+  computeTopSortOrder,
+  getEffectiveSortOrder,
+  splitAndSortNotes,
+} from './lib/noteOrdering';
 import { type UserKeyDocument, fetchUserKeyDoc } from './lib/userKey';
 
 const SYNC_MODE_STORAGE_KEY = 'secure-sync-memo:sync-mode';
@@ -57,6 +65,7 @@ export function App() {
   const [draftTitle, setDraftTitle] = useState('');
   const [draftTags, setDraftTags] = useState<string[]>([]);
   const [draftBody, setDraftBody] = useState('');
+  const [draftIsPinned, setDraftIsPinned] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [decryptError, setDecryptError] = useState<string | null>(null);
@@ -67,8 +76,10 @@ export function App() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const decryptSeqRef = useRef(0);
+  const lastDecryptedRef = useRef<{ id: string; iv: string; ciphertext: string } | null>(null);
 
   const clearSessionState = useCallback(() => {
+    lastDecryptedRef.current = null;
     setDek(null);
     setKeyDoc(null);
     setNotes([]);
@@ -77,6 +88,7 @@ export function App() {
     setDraftTitle('');
     setDraftTags([]);
     setDraftBody('');
+    setDraftIsPinned(false);
     setIsDirty(false);
     setDecryptError(null);
     setNotesError(null);
@@ -157,15 +169,32 @@ export function App() {
       return;
     }
 
+    setDraftTitle(selectedNote.title);
+    setDraftTags(selectedNote.tags);
+    setDraftIsPinned(selectedNote.isPinned);
+
+    const prevDecrypted = lastDecryptedRef.current;
+    if (
+      prevDecrypted &&
+      prevDecrypted.id === selectedNote.id &&
+      prevDecrypted.iv === selectedNote.iv &&
+      prevDecrypted.ciphertext === selectedNote.ciphertext
+    ) {
+      return;
+    }
+
     const currentSeq = ++decryptSeqRef.current;
     setIsDecrypting(true);
     setDecryptError(null);
-    setDraftTitle(selectedNote.title);
-    setDraftTags(selectedNote.tags);
 
     void decryptNoteBody(selectedNote, dek)
       .then((plainBody) => {
         if (decryptSeqRef.current !== currentSeq) return;
+        lastDecryptedRef.current = {
+          id: selectedNote.id,
+          iv: selectedNote.iv,
+          ciphertext: selectedNote.ciphertext,
+        };
         setDraftBody(plainBody);
         setIsDecrypting(false);
       })
@@ -178,6 +207,11 @@ export function App() {
         setIsDecrypting(false);
       });
   }, [dek, selectedNote, isNewDraft, isDirty]);
+
+  const { pinnedNotes: allPinnedNotes, unpinnedNotes: allUnpinnedNotes } = useMemo(
+    () => splitAndSortNotes(notes),
+    [notes],
+  );
 
   const handleSyncModeChange = (mode: SyncMode) => {
     setSyncMode(mode);
@@ -193,6 +227,12 @@ export function App() {
       return;
     }
 
+    const targetIsPinned = isNewDraft ? draftIsPinned : (selectedNote?.isPinned ?? draftIsPinned);
+    const targetSortOrder =
+      !isNewDraft && selectedNote
+        ? getEffectiveSortOrder(selectedNote)
+        : computeTopSortOrder(targetIsPinned ? allPinnedNotes : allUnpinnedNotes);
+
     setIsSaving(true);
     setNotesError(null);
     try {
@@ -203,6 +243,8 @@ export function App() {
           title: draftTitle,
           tags: draftTags,
           body: draftBody,
+          isPinned: targetIsPinned,
+          sortOrder: targetSortOrder,
           existingCreatedAt: selectedNote?.createdAt ?? null,
         },
         dek,
@@ -225,7 +267,10 @@ export function App() {
     draftTitle,
     draftTags,
     draftBody,
+    draftIsPinned,
     selectedNote,
+    allPinnedNotes,
+    allUnpinnedNotes,
   ]);
 
   // Optional auto-save debounce when syncMode === 'auto'
@@ -259,6 +304,7 @@ export function App() {
     }
     if (!confirmLeaveDirtyIfNeeded()) return;
 
+    lastDecryptedRef.current = null;
     setIsNewDraft(false);
     setIsDirty(false);
     setDecryptError(null);
@@ -270,11 +316,13 @@ export function App() {
     if (!confirmLeaveDirtyIfNeeded()) return;
 
     decryptSeqRef.current += 1;
+    lastDecryptedRef.current = null;
     setSelectedNoteId(null);
     setIsNewDraft(true);
     setDraftTitle('');
     setDraftTags([]);
     setDraftBody('');
+    setDraftIsPinned(false);
     setDecryptError(null);
     setIsDecrypting(false);
     setIsDirty(true);
@@ -286,11 +334,13 @@ export function App() {
     setNotesError(null);
     try {
       await softDeleteNote(user.uid, selectedNoteId);
+      lastDecryptedRef.current = null;
       setSelectedNoteId(null);
       setIsNewDraft(false);
       setDraftTitle('');
       setDraftTags([]);
       setDraftBody('');
+      setDraftIsPinned(false);
       setIsDirty(false);
       setMobileView('list');
     } catch {
@@ -313,6 +363,7 @@ export function App() {
   };
 
   const handleLockNow = () => {
+    lastDecryptedRef.current = null;
     setDek(null);
     setNotes([]);
     setSelectedNoteId(null);
@@ -320,6 +371,7 @@ export function App() {
     setDraftTitle('');
     setDraftTags([]);
     setDraftBody('');
+    setDraftIsPinned(false);
     setIsDirty(false);
     setMobileView('list');
   };
@@ -338,18 +390,85 @@ export function App() {
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b, 'ja'));
   }, [notes]);
 
-  const filteredNotes = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return notes.filter((note) => {
+  const isFiltering = Boolean(searchQuery.trim() || selectedTag);
+
+  const filterNote = useCallback(
+    (note: NoteListItem) => {
       if (selectedTag && !note.tags.includes(selectedTag)) {
         return false;
       }
+      const q = searchQuery.trim().toLowerCase();
       if (!q) return true;
       const titleMatch = note.title.toLowerCase().includes(q);
       const tagMatch = note.tags.some((t) => t.toLowerCase().includes(q));
       return titleMatch || tagMatch;
-    });
-  }, [notes, searchQuery, selectedTag]);
+    },
+    [searchQuery, selectedTag],
+  );
+
+  const filteredPinnedNotes = useMemo(
+    () => allPinnedNotes.filter(filterNote),
+    [allPinnedNotes, filterNote],
+  );
+
+  const filteredUnpinnedNotes = useMemo(
+    () => allUnpinnedNotes.filter(filterNote),
+    [allUnpinnedNotes, filterNote],
+  );
+
+  const handleTogglePinNote = useCallback(
+    async (noteId: string) => {
+      if (!user) return;
+      const target = notes.find((n) => n.id === noteId);
+      if (!target) return;
+
+      const nextPinned = !target.isPinned;
+      const destinationSection = nextPinned ? allPinnedNotes : allUnpinnedNotes;
+      const nextSortOrder = computeTopSortOrder(destinationSection);
+
+      if (noteId === selectedNoteId && !isNewDraft) {
+        setDraftIsPinned(nextPinned);
+      }
+
+      setNotesError(null);
+      try {
+        await updateNotePinState(user.uid, noteId, nextPinned, nextSortOrder);
+      } catch {
+        if (noteId === selectedNoteId && !isNewDraft) {
+          setDraftIsPinned(target.isPinned);
+        }
+        setNotesError('ピン止め状態の更新に失敗しました。');
+      }
+    },
+    [user, notes, allPinnedNotes, allUnpinnedNotes, selectedNoteId, isNewDraft],
+  );
+
+  const handleToggleEditorPin = useCallback(() => {
+    if (isNewDraft) {
+      setDraftIsPinned((prev) => !prev);
+      return;
+    }
+    if (selectedNoteId) {
+      void handleTogglePinNote(selectedNoteId);
+    }
+  }, [isNewDraft, selectedNoteId, handleTogglePinNote]);
+
+  const handleReorderNotes = useCallback(
+    async (section: 'pinned' | 'unpinned', activeId: string, overId: string) => {
+      if (!user || isFiltering) return;
+      const sectionNotes = section === 'pinned' ? allPinnedNotes : allUnpinnedNotes;
+      const plan = computeReorderUpdate(sectionNotes, activeId, overId);
+      if (!plan) return;
+
+      setNotesError(null);
+      try {
+        await updateNoteSortOrders(user.uid, plan.updates);
+      } catch {
+        setNotesError('メモの並び替えの保存に失敗しました。');
+      }
+    },
+    [user, isFiltering, allPinnedNotes, allUnpinnedNotes],
+  );
 
   const anyPendingWrites = useMemo(
     () => notes.some((n) => n.hasPendingWrites),
@@ -475,20 +594,27 @@ export function App() {
 
       <main className="workspace" data-mobile-view={mobileView}>
         <NoteList
-          notes={filteredNotes}
+          pinnedNotes={filteredPinnedNotes}
+          unpinnedNotes={filteredUnpinnedNotes}
           selectedNoteId={selectedNoteId}
           searchQuery={searchQuery}
           selectedTag={selectedTag}
           allTags={allTags}
+          canReorder={!isFiltering}
           onSearchChange={setSearchQuery}
           onSelectTag={setSelectedTag}
           onSelectNote={handleSelectNote}
           onCreateNew={handleCreateNew}
+          onTogglePin={(noteId) => void handleTogglePinNote(noteId)}
+          onReorderNotes={(section, activeId, overId) =>
+            void handleReorderNotes(section, activeId, overId)
+          }
         />
 
         <NoteEditor
           hasSelection={hasSelection}
           isNewDraft={isNewDraft}
+          isPinned={draftIsPinned}
           title={draftTitle}
           tags={draftTags}
           body={draftBody}
@@ -508,6 +634,7 @@ export function App() {
             setDraftBody(value);
             setIsDirty(true);
           }}
+          onTogglePin={handleToggleEditorPin}
           onSave={() => void handleSaveNote()}
           onDeleteRequest={() => setDeleteDialogOpen(true)}
           onBackToList={() => setMobileView('list')}
