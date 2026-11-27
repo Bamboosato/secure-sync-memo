@@ -1,10 +1,11 @@
 import { type KeyboardEvent, useEffect, useState } from 'react';
-import { ArrowLeft, Plus, Save, Tag, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Pin, Plus, Save, Tag, Trash2, X } from 'lucide-react';
 import { MarkdownPreview } from './MarkdownPreview';
 
 interface NoteEditorProps {
   hasSelection: boolean;
   isNewDraft: boolean;
+  isPinned: boolean;
   title: string;
   tags: string[];
   body: string;
@@ -15,6 +16,7 @@ interface NoteEditorProps {
   onTitleChange: (value: string) => void;
   onTagsChange: (tags: string[]) => void;
   onBodyChange: (value: string) => void;
+  onTogglePin: () => void;
   onSave: () => void;
   onDeleteRequest: () => void;
   onBackToList: () => void;
@@ -24,6 +26,7 @@ interface NoteEditorProps {
 export function NoteEditor({
   hasSelection,
   isNewDraft,
+  isPinned,
   title,
   tags,
   body,
@@ -34,6 +37,7 @@ export function NoteEditor({
   onTitleChange,
   onTagsChange,
   onBodyChange,
+  onTogglePin,
   onSave,
   onDeleteRequest,
   onBackToList,
@@ -117,9 +121,24 @@ export function NoteEditor({
           </button>
         </div>
 
-        <span className="hint" style={{ fontSize: '0.75rem' }}>
-          Ctrl / Cmd + S で保存
-        </span>
+        <div className="editor-topbar-actions">
+          <button
+            type="button"
+            className={`btn btn-secondary btn-pin-toggle ${isPinned ? 'active' : ''}`}
+            aria-pressed={isPinned}
+            onClick={onTogglePin}
+            disabled={isSaving}
+            aria-label={isPinned ? 'ピン止めを解除' : 'このメモをピン止め'}
+            title={isPinned ? 'ピン止めを解除' : 'このメモをピン止め'}
+          >
+            <Pin size={15} aria-hidden="true" className={isPinned ? 'pin-icon-filled' : undefined} />
+            <span>{isPinned ? 'ピン止め中' : 'ピン止め'}</span>
+          </button>
+
+          <span className="hint editor-shortcut-hint" style={{ fontSize: '0.75rem' }}>
+            Ctrl / Cmd + S で保存
+          </span>
+        </div>
       </div>
 
       <div className="editor-body-wrap">

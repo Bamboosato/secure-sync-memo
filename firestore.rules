@@ -35,6 +35,8 @@ service cloud.firestore {
     //   - createdAt: timestamp (required, immutable on update) - Creation timestamp
     //   - updatedAt: timestamp (required) - Last update timestamp (LWW sync)
     //   - isDeleted: bool (required) - Soft-delete flag for offline sync
+    //   - isPinned: bool (optional) - Whether the note is pinned to the top section
+    //   - sortOrder: number (optional, -1000000000000000..1000000000000000) - Custom ordering key within section
     //
     // Note on subcollection parent checks:
     //   We intentionally do not enforce exists(/databases/$(database)/documents/users/$(userId))
@@ -169,7 +171,9 @@ service cloud.firestore {
           'encVersion',
           'createdAt',
           'updatedAt',
-          'isDeleted'
+          'isDeleted',
+          'isPinned',
+          'sortOrder'
         ]) &&
         hasRequiredFields([
           'title',
@@ -189,7 +193,12 @@ service cloud.firestore {
         data.encVersion == 1 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
-        data.isDeleted is bool;
+        data.isDeleted is bool &&
+        (!('isPinned' in data) || data.isPinned is bool) &&
+        (!('sortOrder' in data) ||
+          (data.sortOrder is number &&
+            data.sortOrder >= -1000000000000000 &&
+            data.sortOrder <= 1000000000000000));
     }
 
     // ===============================================================

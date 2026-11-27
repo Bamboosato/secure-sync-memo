@@ -12,6 +12,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { decryptText, encryptText } from './crypto';
 import { db } from './firebase';
@@ -25,6 +26,8 @@ export interface EncryptedNoteDoc {
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
   isDeleted: boolean;
+  isPinned: boolean;
+  sortOrder: number | null;
 }
 
 export interface NoteListItem extends EncryptedNoteDoc {
@@ -53,6 +56,11 @@ function mapNoteDoc(snapshot: QueryDocumentSnapshot): NoteListItem {
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt : null,
     updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt : null,
     isDeleted: Boolean(data.isDeleted),
+    isPinned: Boolean(data.isPinned),
+    sortOrder:
+      typeof data.sortOrder === 'number' && Number.isFinite(data.sortOrder)
+        ? data.sortOrder
+        : null,
     hasPendingWrites: snapshot.metadata.hasPendingWrites,
     fromCache: snapshot.metadata.fromCache,
   };
@@ -115,6 +123,8 @@ export interface SaveNoteParams {
   title: string;
   tags: string[];
   body: string;
+  isPinned: boolean;
+  sortOrder: number;
   existingCreatedAt?: Timestamp | null;
 }
 
@@ -146,9 +156,52 @@ export async function saveNote(
     createdAt: params.existingCreatedAt ?? serverTimestamp(),
     updatedAt: serverTimestamp(),
     isDeleted: false,
+    isPinned: Boolean(params.isPinned),
+    sortOrder: params.sortOrder,
   });
 
   return noteRef.id;
+}
+
+export async function updateNotePinState(
+  uid: string,
+  noteId: string,
+  isPinned: boolean,
+  sortOrder: number,
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'notes', noteId), {
+    isPinned: Boolean(isPinned),
+    sortOrder,
+  });
+}
+
+export async function updateNoteSortOrders(
+  uid: string,
+  updates: ReadonlyArray<{ id: string; sortOrder: number }>,
+): Promise<void> {
+  if (updates.length === 0) {
+    return;
+  }
+
+  if (updates.length === 1) {
+    const single = updates[0]!;
+    await updateDoc(doc(db, 'users', uid, 'notes', single.id), {
+      sortOrder: single.sortOrder,
+    });
+    return;
+  }
+
+  const CHUNK_SIZE = 450;
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const item of chunk) {
+      batch.update(doc(db, 'users', uid, 'notes', item.id), {
+        sortOrder: item.sortOrder,
+      });
+    }
+    await batch.commit();
+  }
 }
 
 export async function softDeleteNote(uid: string, noteId: string): Promise<void> {
